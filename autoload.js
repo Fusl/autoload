@@ -40,8 +40,7 @@ var setbw = function (loadavg) {
         var key = 0;
         for (key = 0; key < containerlist.length; key++) {
             if (!containerlist[key].laverage) {
-                exec('/usr/sbin/vzlist', {maxBuffer: 1048576}, console.log);
-                console.log(containerlist[key]);
+                containerlist[key].laverage = [0, 0, 0];
             }
             containerloads.push(containerlist[key].laverage[0], containerlist[key].laverage[1], containerlist[key].laverage[2]);
             containerlist[key].iolimit = containerlist[key].iolimit / 1048576;
