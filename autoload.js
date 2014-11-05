@@ -1,8 +1,13 @@
 #!/usr/local/bin/node
 
-var maxload = 36;
+var ctidwhitelist = [
+    810,
+    3236,
+    3279
+];
 
-var maxcpulimit = 400;
+var maxload = 24;
+
 var maxiolimit = 1000;
 var maxiopslimit = 100;
 
@@ -16,13 +21,12 @@ var exec = child_process.exec;
 
 var loadbefore = 0;
 var cycle = 0;
-var killedcontainers = 0;
 
 var sorter = function(a,b){return a-b;};
 
 var setbw = function (loadavg) {
     console.log('cycle ' + cycle++ + ' at ' + (new Date()).toString() + ' w/ lavg ' + loadavg);
-    exec('/usr/sbin/vzlist -jo ctid,laverage,layout,cpulimit,iolimit,iopslimit -s laverage', {maxBuffer: 1048576}, function (err, stdout, stderr) {
+    exec('/usr/sbin/vzlist -jo ctid,laverage,cpus,layout,cpulimit,iolimit,iopslimit -s laverage', {maxBuffer: 1048576}, function (err, stdout, stderr) {
         if (err) {
             console.log('Error while reading vzlist:', err, stderr);
             return;
@@ -45,6 +49,7 @@ var setbw = function (loadavg) {
             }
             containerloads.push(containerlist[key].laverage[0], containerlist[key].laverage[1], containerlist[key].laverage[2]);
             containerlist[key].iolimit = containerlist[key].iolimit / 1048576;
+            containerlist[key].maxcpulimit = (!containerlist[key].cpus || containerlist[key].cpus > os.cpus().length ? os.cpus().length : containerlist[key].cpus) * 100;
         }
         containertopload = containerloads.sort(sorter).slice(containerloads.length - 1, containerloads.length)[0];
         if (!containertopload) {
@@ -57,10 +62,10 @@ var setbw = function (loadavg) {
                 console.log('ERROR: Unexpected behavior: multiplier is NaN:', maxload, loadavg, containertopload, thiscontainertopload, maxload);
                 multiplier = 1;
             }
-            thiscontainercpulimit  = Math.ceil(Math.round(maxcpulimit * multiplier / 25) * 25);
+            thiscontainercpulimit  = Math.ceil(Math.round(containerlist[key].maxcpulimit * multiplier / 25) * 25);
             thiscontaineriolimit   = Math.ceil(maxiolimit   * multiplier);
             thiscontaineriopslimit = Math.ceil(maxiopslimit * multiplier);
-            if (multiplier >= 0.95 || (thiscontainercpulimit >= maxcpulimit && thiscontaineriolimit >= maxiolimit && thiscontaineriopslimit >= maxiopslimit)) {
+            if (ctidwhitelist.indexOf(containerlist[key].ctid) !== -1 || multiplier >= 0.95 || (thiscontainercpulimit >= containerlist[key].maxcpulimit && thiscontaineriolimit >= maxiolimit && thiscontaineriopslimit >= maxiopslimit)) {
                 thiscontainercpulimit  = 0;
                 thiscontaineriolimit   = 0;
                 thiscontaineriopslimit = 0;
@@ -94,15 +99,17 @@ var setbw = function (loadavg) {
 
 
 var predictload = function () {
-    var loadcurrent = os.loadavg()[0];
-    var loadafter = loadcurrent + (loadcurrent - loadbefore);
-    loadbefore = loadcurrent;
-    return loadafter < loadcurrent ? loadcurrent : loadafter;
+    var loads = os.loadavg();
+    var loadafter = loads[0] + (loads[0] - loadbefore);
+    loads.push(loadafter, loadbefore);
+    loadbefore = loads[0];
+    return loads.sort(sorter).slice(4, 5);
 };
 
 var loop = function () {
     setbw(predictload());
 };
+
 setbw(predictload());
 
 setInterval(loop, 5000);
