@@ -16,6 +16,7 @@ var exec = child_process.exec;
 
 var loadbefore = 0;
 var cycle = 0;
+var killedcontainers = 0;
 
 var sorter = function(a,b){return a-b;};
 
