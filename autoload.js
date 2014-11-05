@@ -34,12 +34,12 @@ var killcontainer = function (ctid) {
         return;
     }
     killjobs.push(ctid);
+    killedcontainers++;
     console.log('Killing container ' + ctid + ' ...');
-    exec('/usr/sbin/vzctl --skiplock stop ' + ctid + ' --fast', {maxBuffer: 1048576}, function (err) {
+    exec('/usr/sbin/vzctl --skiplock stop ' + ctid + ' --fast', {maxBuffer: 1048576}, function (err, stdout, stderr) {
         if (err) {
-            console.log(err);
+            console.log('Error while killing container ' + ctid + ':', err, stdout, stderr);
         }
-        killedcontainers++;
         killjobs.splice(killjobs.indexOf(ctid), 1);
         setTimeout(function () {
             killedcontainers--;
@@ -51,7 +51,7 @@ var setbw = function (loadavg) {
     console.log('cycle ' + cycle++ + ' at ' + (new Date()).toString() + ' w/ lavg ' + loadavg);
     exec('/usr/sbin/vzlist -jo ctid,laverage,cpus,layout,cpulimit,iolimit,iopslimit -s laverage', {maxBuffer: 1048576}, function (err, stdout, stderr) {
         if (err) {
-            console.log('Error while reading vzlist:', err, stderr);
+            console.log('Error while reading vzlist:', err, stdout, stderr);
             return;
         }
         var containerlist = JSON.parse(stdout).reverse();
