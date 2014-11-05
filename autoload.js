@@ -100,8 +100,7 @@ var setbw = function (loadavg) {
 
 var predictload = function () {
     var loads = os.loadavg();
-    var loadafter = loads[0] + (loads[0] - loadbefore);
-    loads.push(loadafter, loadbefore);
+    loads.push(loads[0] + (loads[0] - loadbefore), loadbefore);
     loadbefore = loads[0];
     return loads.sort(sorter).slice(4, 5);
 };
