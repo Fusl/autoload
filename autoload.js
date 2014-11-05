@@ -7,6 +7,8 @@ var ctidwhitelist = [
 ];
 
 var maxload = 24;
+var maxkill = 60;
+var maxincr = 12;
 
 var maxiolimit = 1000;
 var maxiopslimit = 100;
@@ -21,8 +23,29 @@ var exec = child_process.exec;
 
 var loadbefore = 0;
 var cycle = 0;
+var killjobs = [];
+var killedcontainers = 0;
 
 var sorter = function(a,b){return a-b;};
+
+var killcontainer = function (ctid) {
+    if (killjobs.indexOf(ctid) !== -1) {
+        console.log('Already killing container ' + ctid + '!');
+        return;
+    }
+    killjobs.push(ctid);
+    console.log('Killing container ' + ctid + ' ...');
+    exec('/usr/sbin/vzctl --skiplock stop ' + ctid + ' --fast', {maxBuffer: 1048576}, function (err) {
+        if (err) {
+            console.log(err);
+        }
+        killedcontainers++;
+        killjobs.splice(killjobs.indexOf(ctid), 1);
+        setTimeout(function () {
+            killedcontainers--;
+        }, 120000);
+    });
+};
 
 var setbw = function (loadavg) {
     console.log('cycle ' + cycle++ + ' at ' + (new Date()).toString() + ' w/ lavg ' + loadavg);
@@ -87,6 +110,9 @@ var setbw = function (loadavg) {
             }
             if (containerlist[key].iopslimit !== thiscontaineriopslimit) {
                 thiscontainerparams.push('--iopslimit', thiscontaineriopslimit);
+            }
+            if (loadavg >= maxkill + maxincr * killedcontainers && (thiscontainercpulimit || thiscontaineriolimit || thiscontaineriopslimit)) {
+                killcontainer(containerlist[key].ctid);
             }
             if (thiscontainerparams.length) {
                 thiscontainerparams = ['/usr/sbin/vzctl', '--skiplock', '--quiet', 'set', containerlist[key].ctid].concat(thiscontainerparams);
