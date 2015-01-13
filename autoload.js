@@ -1,9 +1,9 @@
 #!/usr/local/bin/node
 
 var ctidwhitelist = [
-    810,
-    3236,
-    3279
+    810,  // ed-at-rec01.edis.at
+    3236, // ed-at-rec02.edis.at
+    3279  // fnalerts.sigqu.it - Doesn't need much resources but in case of accidental limitation the daemon unfortunately crashes
 ];
 
 var maxload = 24;
