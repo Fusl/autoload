@@ -12,10 +12,12 @@ var maxincr = 12;
 
 var maxiolimit = 1000;
 var maxiopslimit = 100;
+var maxcpuunits = 10000;
 
 var mincpulimit = 1;
 var miniolimit = 1;
 var miniopslimit = 1;
+var mincpuunits = 8;
 
 var os = require('os');
 var child_process = require('child_process');
@@ -38,7 +40,7 @@ var killcontainer = function (ctid) {
     console.log('Killing container ' + ctid + ' ...');
     exec('/usr/sbin/vzctl --skiplock stop ' + ctid + ' --fast', {maxBuffer: 1048576}, function (err, stdout, stderr) {
         if (err) {
-            console.log('Error while killing container ' + ctid + ':', err, stdout, stderr);
+            console.error('Error while killing container ' + ctid + ':', err, stdout, stderr);
         }
         killjobs.splice(killjobs.indexOf(ctid), 1);
         setTimeout(function () {
@@ -49,9 +51,9 @@ var killcontainer = function (ctid) {
 
 var setbw = function (loadavg) {
     console.log('cycle ' + cycle++ + ' at ' + (new Date()).toString() + ' w/ lavg ' + loadavg);
-    exec('/usr/sbin/vzlist -jo ctid,laverage,cpus,layout,cpulimit,iolimit,iopslimit -s laverage', {maxBuffer: 1048576}, function (err, stdout, stderr) {
+    exec('/usr/sbin/vzlist -jo ctid,laverage,cpus,layout,cpulimit,iolimit,iopslimit,cpuunits -s laverage', {maxBuffer: 1048576}, function (err, stdout, stderr) {
         if (err) {
-            console.log('Error while reading vzlist:', err, stdout, stderr);
+            console.error('Error while reading vzlist:', err, stdout, stderr);
             return;
         }
         var containerlist = JSON.parse(stdout).reverse();
@@ -63,6 +65,7 @@ var setbw = function (loadavg) {
         var thiscontainercpulimit = 0;
         var thiscontaineriolimit = 0;
         var thiscontaineriopslimit = 0;
+        var thiscontainercpuunits = 0;
         var thiscontainerparams = [];
         
         var key = 0;
@@ -82,20 +85,23 @@ var setbw = function (loadavg) {
             thiscontainertopload   = containerlist[key].laverage.sort(sorter).slice(2, 3)[0];
             multiplier             = ((maxload - loadavg / containertopload * thiscontainertopload) / maxload);
             if (isNaN(multiplier)) {
-                console.log('ERROR: Unexpected behavior: multiplier is NaN:', maxload, loadavg, containertopload, thiscontainertopload, maxload);
+                console.error('ERROR: Unexpected behavior: multiplier is NaN:', maxload, loadavg, containertopload, thiscontainertopload, maxload);
                 multiplier = 1;
             }
             thiscontainercpulimit  = Math.ceil(Math.round(containerlist[key].maxcpulimit * multiplier / 25) * 25);
             thiscontaineriolimit   = Math.ceil(maxiolimit   * multiplier);
             thiscontaineriopslimit = Math.ceil(maxiopslimit * multiplier);
-            if (ctidwhitelist.indexOf(containerlist[key].ctid) !== -1 || multiplier >= 0.95 || (thiscontainercpulimit >= containerlist[key].maxcpulimit && thiscontaineriolimit >= maxiolimit && thiscontaineriopslimit >= maxiopslimit)) {
+            thiscontainercpuunits  = Math.ceil(maxcpuunits  * multiplier);
+            if (ctidwhitelist.indexOf(containerlist[key].ctid) !== -1 || multiplier >= 0.95 || (thiscontainercpulimit >= containerlist[key].maxcpulimit && thiscontaineriolimit >= maxiolimit && thiscontaineriopslimit >= maxiopslimit && thiscontainercpuunits >= maxcpuunits)) {
                 thiscontainercpulimit  = 0;
                 thiscontaineriolimit   = 0;
                 thiscontaineriopslimit = 0;
-            } else if (multiplier <= 0 || thiscontainercpulimit < mincpulimit || thiscontaineriolimit < miniolimit || thiscontaineriopslimit < miniopslimit) {
+                thiscontainercpuunits  = 0;
+            } else if (multiplier <= 0 || thiscontainercpulimit < mincpulimit || thiscontaineriolimit < miniolimit || thiscontaineriopslimit < miniopslimit || thiscontainercpuunits < mincpuunits) {
                 thiscontainercpulimit  = mincpulimit;
                 thiscontaineriolimit   = miniolimit;
                 thiscontaineriopslimit = miniopslimit;
+                thiscontainercpuunits  = mincpuunits;
             }
             if (containerlist[key].layout !== 'ploop') {
                 thiscontaineriopslimit = 0;
@@ -111,8 +117,11 @@ var setbw = function (loadavg) {
             if (containerlist[key].iopslimit !== thiscontaineriopslimit) {
                 thiscontainerparams.push('--iopslimit', thiscontaineriopslimit);
             }
-            if (loadavg >= maxkill + maxincr * killedcontainers && (thiscontainercpulimit || thiscontaineriolimit || thiscontaineriopslimit)) {
-                killcontainer(containerlist[key].ctid);
+            if (containerlist[key].cpuunits !== thiscontainercpuunits) {
+                thiscontainerparams.push('--cpuunits', thiscontainercpuunits);
+            }
+            if (loadavg >= maxkill + maxincr * killedcontainers && (thiscontainercpulimit || thiscontaineriolimit || thiscontaineriopslimit || thiscontainercpuunits)) {
+                // killcontainer(containerlist[key].ctid);
             }
             if (thiscontainerparams.length) {
                 thiscontainerparams = ['/usr/sbin/vzctl', '--skiplock', '--quiet', 'set', containerlist[key].ctid].concat(thiscontainerparams);
