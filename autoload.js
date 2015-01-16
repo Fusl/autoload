@@ -7,7 +7,7 @@ var ctidwhitelist = [
 ];
 
 var maxload         = 24;
-var maxkill         = 128;
+var maxkill         = 256;
 var maxincr         = 12;
 var keeploadhistory = 720;
 
