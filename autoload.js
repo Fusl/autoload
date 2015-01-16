@@ -6,29 +6,32 @@ var ctidwhitelist = [
     3279  // fnalerts.sigqu.it - Doesn't need much resources but in case of accidental limitation the daemon unfortunately crashes
 ];
 
-var maxload = 24;
-var maxkill = 60;
-var maxincr = 12;
+var maxload         = 24;
+var maxkill         = 128;
+var maxincr         = 12;
+var keeploadhistory = 720;
 
-var maxiolimit = 1000;
+// var maxcpulimit is not required here since we calculate this with the amount of CPU cores set for containers
+var maxiolimit   = 1000;
 var maxiopslimit = 100;
-var maxcpuunits = 10000;
+var maxcpuunits  = 20000;
 
-var mincpulimit = 1;
-var miniolimit = 1;
+var mincpulimit  = 1;
+var miniolimit   = 1;
 var miniopslimit = 1;
-var mincpuunits = 8;
+var mincpuunits  = 8;
 
-var os = require('os');
-var child_process = require('child_process');
-var exec = child_process.exec;
+var os   = require('os');
+var exec = require('child_process').exec;
 
 var loadbefore = 0;
 var cycle = 0;
 var killjobs = [];
 var killedcontainers = 0;
 
-var sorter = function(a,b){return a-b;};
+var sorter = function (a, b) {
+    return a - b;
+};
 
 var killcontainer = function (ctid) {
     if (killjobs.indexOf(ctid) !== -1) {
@@ -39,13 +42,15 @@ var killcontainer = function (ctid) {
     killedcontainers++;
     console.log('Killing container ' + ctid + ' ...');
     exec('/usr/sbin/vzctl --skiplock stop ' + ctid + ' --fast', {maxBuffer: 1048576}, function (err, stdout, stderr) {
+        killjobs.splice(killjobs.indexOf(ctid), 1);
         if (err) {
             console.error('Error while killing container ' + ctid + ':', err, stdout, stderr);
-        }
-        killjobs.splice(killjobs.indexOf(ctid), 1);
-        setTimeout(function () {
             killedcontainers--;
-        }, 120000);
+        } else {
+            setTimeout(function () {
+                killedcontainers--;
+            }, 120000);
+        }
     });
 };
 
@@ -88,25 +93,31 @@ var setbw = function (loadavg) {
                 console.error('ERROR: Unexpected behavior: multiplier is NaN:', maxload, loadavg, containertopload, thiscontainertopload, maxload);
                 multiplier = 1;
             }
-            thiscontainercpulimit  = Math.ceil(Math.round(containerlist[key].maxcpulimit * multiplier / 25) * 25);
+            thiscontainercpulimit  = Math.ceil(Math.round(containerlist[key].maxcpulimit * multiplier / 10) * 10);
             thiscontaineriolimit   = Math.ceil(maxiolimit   * multiplier);
             thiscontaineriopslimit = Math.ceil(maxiopslimit * multiplier);
-            thiscontainercpuunits  = Math.ceil(maxcpuunits  * multiplier);
-            if (ctidwhitelist.indexOf(containerlist[key].ctid) !== -1 || multiplier >= 0.95 || (thiscontainercpulimit >= containerlist[key].maxcpulimit && thiscontaineriolimit >= maxiolimit && thiscontaineriopslimit >= maxiopslimit && thiscontainercpuunits >= maxcpuunits)) {
+            thiscontainercpuunits  = Math.ceil(Math.round(maxcpuunits  * multiplier / 1000) * 1000);
+            if (
+                ctidwhitelist.indexOf(containerlist[key].ctid) !== -1 || // If the container is in the whitelist ...
+                multiplier >= 0.95 || // ... or the multiplier is above 95% ...
+                (thiscontainercpulimit >= containerlist[key].maxcpulimit && thiscontaineriolimit >= maxiolimit && thiscontaineriopslimit >= maxiopslimit && thiscontainercpuunits >= maxcpuunits) || // ... or all specified limitating factors are above the high watermark ...
+                containerlist[key].uptime < 60 // ... or the container is running less than 60 seconds ...
+               ) {
+                // ... don't limit its resources
                 thiscontainercpulimit  = 0;
                 thiscontaineriolimit   = 0;
                 thiscontaineriopslimit = 0;
-                thiscontainercpuunits  = 0;
+                thiscontainercpuunits  = maxcpuunits;
             } else if (multiplier <= 0 || thiscontainercpulimit < mincpulimit || thiscontaineriolimit < miniolimit || thiscontaineriopslimit < miniopslimit || thiscontainercpuunits < mincpuunits) {
+                // If the given multiplier or the limits are below the low watermark, set the low watermarks as limits
                 thiscontainercpulimit  = mincpulimit;
                 thiscontaineriolimit   = miniolimit;
                 thiscontaineriopslimit = miniopslimit;
                 thiscontainercpuunits  = mincpuunits;
             }
             if (containerlist[key].layout !== 'ploop') {
-                thiscontaineriopslimit = 0;
+                thiscontaineriopslimit = 0; // iopslimit on simfs containers is horrible (it uses too much CPU cycles)
             }
-            
             thiscontainerparams = [];
             if (containerlist[key].cpulimit !== thiscontainercpulimit) { //if ((containerlist[key].cpulimit === 0 && thiscontainercpulimit !== 0) || (containerlist[key].cpulimit !== 0 && thiscontainercpulimit === 0) || containerlist[key].cpulimit > thiscontainercpulimit || containerlist[key].cpulimit + 5 < thiscontainercpulimit) {
                 thiscontainerparams.push('--cpulimit', thiscontainercpulimit);
@@ -121,7 +132,7 @@ var setbw = function (loadavg) {
                 thiscontainerparams.push('--cpuunits', thiscontainercpuunits);
             }
             if (loadavg >= maxkill + maxincr * killedcontainers && (thiscontainercpulimit || thiscontaineriolimit || thiscontaineriopslimit || thiscontainercpuunits)) {
-                // killcontainer(containerlist[key].ctid);
+                killcontainer(containerlist[key].ctid);
             }
             if (thiscontainerparams.length) {
                 thiscontainerparams = ['/usr/sbin/vzctl', '--skiplock', '--quiet', 'set', containerlist[key].ctid].concat(thiscontainerparams);
@@ -131,7 +142,6 @@ var setbw = function (loadavg) {
         }
     });
 };
-
 
 var predictload = function () {
     var loads = os.loadavg();
