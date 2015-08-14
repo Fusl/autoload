@@ -3,7 +3,9 @@
 var ctidwhitelist = [
     810,  // ed-at-rec01.edis.at
     3236, // ed-at-rec02.edis.at
-    3279  // fnalerts.sigqu.it - Doesn't need much resources but in case of accidental limitation the daemon unfortunately crashes
+    3279, // fnalerts.sigqu.it - Doesn't need much resources but in case of accidental limitation the daemon unfortunately crashes
+    3975, // fvz-rec-at-vie-01 - recursor
+    4757  // connection tracker on ed-li-vz01
 ];
 
 var maxload         = 24;
@@ -34,6 +36,10 @@ var sorter = function (a, b) {
 };
 
 var killcontainer = function (ctid) {
+    if (killjobs.length) { // Workaround for container mass kill
+        console.log('Too many killjobs running, not killing ' + ctid + '!');
+        return;
+    }
     if (killjobs.indexOf(ctid) !== -1) {
         console.log('Already killing container ' + ctid + '!');
         return;
