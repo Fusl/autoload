@@ -1,11 +1,9 @@
-#!/usr/local/bin/node
+#!/usr/bin/env node
 
 var ctidwhitelist = [
-    810,  // ed-at-rec01.edis.at
-    3236, // ed-at-rec02.edis.at
-    3279, // fnalerts.sigqu.it - Doesn't need much resources but in case of accidental limitation the daemon unfortunately crashes
-    3975, // fvz-rec-at-vie-01 - recursor
-    4757  // connection tracker on ed-li-vz01
+    100,
+    1234,
+    2222
 ];
 
 var maxload         = 24;
